@@ -16,7 +16,7 @@
 | 文件 | 说明 |
 |:---|:---|
 | `deepseek-scraper.user.js` | 基础功能版，简洁稳定 |
-| `deepseek-scraper-gui.user.js` | 美化折叠版，内置壁纸，界面更精致 |
+| `deepseek-scraper-gui.user.js` | 美化折叠版，界面更精致 |
 
 ## 🚀 安装
 
