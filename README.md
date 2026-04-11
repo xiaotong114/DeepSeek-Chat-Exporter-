@@ -15,9 +15,8 @@
 
 | 文件 | 说明 |
 |:---|:---|
-| `deepseek-scraper.user.js` | 基础功能版，简洁稳定 |
-| `deepseek-scraper-gui.user.js` | 美化折叠版，界面更精致 |
-
+| `deepseek对话完整复制.user.js` | 基础功能版，简洁稳定 |
+| `deepseek对话完整复制（ui更加美丽）.user.js` | 美化折叠版，界面更精致 |
 ## 🚀 安装
 
 1. 安装 [Tampermonkey](https://www.tampermonkey.net/) 浏览器扩展。
