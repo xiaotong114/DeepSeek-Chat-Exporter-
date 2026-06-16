@@ -1,444 +1,772 @@
 // ==UserScript==
-// @name         DeepSeek 对话抓取器 (轻量UI版)
+// @name         DeepSeek 对话抓取器
 // @namespace    http://tampermonkey.net/
-// @version      6.1
-// @description  功能完全不变，仅UI轻量化，适合性能不佳的设备
-// @author       你
+// @version      1.5
+// @description  抓取 DeepSeek 对话记录，支持滚动自动捕获、URL变化检测
+// @author       You
 // @match        https://chat.deepseek.com/*
 // @grant        none
+// @run-at       document-end
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    if (window.__dsScraperLite) return;
-    window.__dsScraperLite = true;
+    if (window.__deepseekScraperGUI) return;
+    window.__deepseekScraperGUI = true;
 
-    // ---------- 轻量样式：去毛玻璃、去渐变、去发光、去圆角大、去过渡 ----------
+    // ---------- 样式 ----------
     const style = document.createElement('style');
     style.textContent = `
-        #ds-scraper-lite {
+        #ds-scraper-gui {
             position: fixed;
             top: 80px;
             right: 20px;
             z-index: 999999;
             background: #1e1e2e;
             color: #cdd6f4;
-            border-radius: 6px;
-            padding: 12px;
-            width: 280px;
-            font-family: system-ui, sans-serif;
-            font-size: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            border: 1px solid #45475a;
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 13px;
+            width: 320px;
+            padding: 16px;
+            user-select: none;
+            border: 1px solid #313244;
+            backdrop-filter: blur(4px);
         }
-        #ds-scraper-lite.collapsed {
-            width: 44px;
-            height: 44px;
-            padding: 0;
-            border-radius: 22px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        #ds-scraper-lite.collapsed .panel-content { display: none; }
-        #ds-scraper-lite.collapsed .collapse-icon { display: flex; font-size: 22px; margin: 0; }
-        #ds-scraper-lite .panel-content { display: block; }
-        #ds-scraper-lite .collapse-icon { display: none; }
-        
-        #ds-scraper-lite .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
+        #ds-scraper-gui h3 {
+            margin: 0 0 12px 0;
+            text-align: center;
+            color: #89b4fa;
+            font-size: 16px;
+            border-bottom: 1px solid #313244;
+            padding-bottom: 8px;
             cursor: move;
         }
-        #ds-scraper-lite .header h3 {
-            margin: 0;
-            color: #89b4fa;
-            font-size: 14px;
-            font-weight: 500;
-        }
-        #ds-scraper-lite .header-actions { display: flex; gap: 4px; align-items: center; }
-        #ds-scraper-lite .collapse-header-btn,
-        #ds-scraper-lite .close-btn {
-            cursor: pointer;
-            color: #6c7086;
-            font-size: 16px;
-            width: 24px;
-            height: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 4px;
-        }
-        #ds-scraper-lite .close-btn:hover { color: #f38ba8; }
-        #ds-scraper-lite .collapse-header-btn:hover { color: #89b4fa; }
-        
-        #ds-scraper-lite .mode-switch { display: flex; gap: 4px; margin-bottom: 8px; }
-        #ds-scraper-lite .mode-btn {
-            flex: 1;
-            padding: 4px 6px;
-            border: 1px solid #45475a;
-            border-radius: 4px;
-            background: #313244;
-            color: #a6adc8;
-            font-size: 11px;
-            cursor: pointer;
-            text-align: center;
-        }
-        #ds-scraper-lite .mode-btn.active {
-            background: #45475a;
-            color: #89b4fa;
-            font-weight: 600;
-        }
-        
-        #ds-scraper-lite .btn-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
-        #ds-scraper-lite button {
+        #ds-scraper-gui button {
+            display: block;
             width: 100%;
-            padding: 8px 10px;
-            border: 1px solid #45475a;
-            border-radius: 4px;
-            background: #313244;
-            color: #cdd6f4;
-            font-weight: 500;
-            font-size: 12px;
-            cursor: pointer;
-        }
-        #ds-scraper-lite button:hover { background: #45475a; }
-        #ds-scraper-lite button.primary { background: #89b4fa; color: #1e1e2e; border-color: #89b4fa; font-weight: 600; }
-        #ds-scraper-lite button.primary:hover { background: #a6c8ff; }
-        #ds-scraper-lite button.warning { background: #fab387; color: #1e1e2e; border-color: #fab387; font-weight: 600; }
-        #ds-scraper-lite button.stop { background: #f38ba8; color: #1e1e2e; border-color: #f38ba8; font-weight: 600; }
-        #ds-scraper-lite button.stop:hover { background: #ffa0b4; }
-        #ds-scraper-lite button:disabled { opacity: 0.4; pointer-events: none; }
-        
-        #ds-scraper-lite .config-section { background: #181825; border-radius: 4px; padding: 8px 10px; margin: 8px 0; border: 1px solid #313244; }
-        #ds-scraper-lite .config-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 11px; }
-        #ds-scraper-lite .config-row:last-child { margin-bottom: 0; }
-        #ds-scraper-lite .config-row label { width: 50px; flex-shrink: 0; }
-        #ds-scraper-lite .config-row input,
-        #ds-scraper-lite .config-row select {
-            flex: 1;
-            background: #1e1e2e;
-            border: 1px solid #45475a;
-            border-radius: 4px;
-            color: #cdd6f4;
-            padding: 4px 6px;
-            font-size: 11px;
-        }
-        #ds-scraper-lite .config-row select { cursor: pointer; }
-        #ds-scraper-lite .config-row input:focus,
-        #ds-scraper-lite .config-row select:focus { outline: none; border-color: #89b4fa; }
-        
-        #ds-scraper-lite .section-title { font-size: 10px; color: #89b4fa; margin: 8px 0 2px; border-top: 1px solid #313244; padding-top: 6px; }
-        
-        #ds-scraper-lite .status {
             margin: 8px 0;
-            padding: 6px 8px;
-            background: #181825;
-            border-radius: 4px;
-            text-align: center;
-            font-size: 11px;
-            min-height: 28px;
-        }
-        #ds-scraper-lite .progress {
-            height: 4px;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
             background: #313244;
-            border-radius: 2px;
-            overflow: hidden;
-            margin: 6px 0;
+            color: #cdd6f4;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+            border: 1px solid #45475a;
+            font-size: 13px;
         }
-        #ds-scraper-lite .progress-bar {
+        #ds-scraper-gui button:hover {
+            background: #45475a;
+        }
+        #ds-scraper-gui button.primary {
+            background: #89b4fa;
+            color: #1e1e2e;
+            border-color: #89b4fa;
+        }
+        #ds-scraper-gui button.primary:hover {
+            background: #b4befe;
+        }
+        #ds-scraper-gui button.stop {
+            background: #f38ba8;
+            color: #1e1e2e;
+            border-color: #f38ba8;
+        }
+        #ds-scraper-gui .status {
+            margin: 12px 0 8px;
+            font-size: 12px;
+            color: #a6adc8;
+            text-align: center;
+            min-height: 32px;
+            white-space: pre-line;
+        }
+        #ds-scraper-gui .progress {
+            height: 6px;
+            background: #313244;
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 8px 0;
+        }
+        #ds-scraper-gui .progress-bar {
             height: 100%;
             width: 0%;
             background: #a6e3a1;
+            transition: width 0.1s;
         }
-        
-        #ds-scraper-lite .footer-note { font-size: 10px; color: #6c7086; text-align: center; margin-top: 8px; }
-        #ds-scraper-lite .ua-tip { font-size: 10px; color: #6c7086; text-align: center; margin-top: 4px; }
-        #ds-scraper-lite .badge { background: #45475a; padding: 1px 5px; border-radius: 3px; font-size: 10px; color: #a6adc8; }
-        
-        .single-mode-only { display: block; }
-        .batch-mode-only { display: none; }
+        #ds-scraper-gui .close-btn {
+            float: right;
+            cursor: pointer;
+            color: #6c7086;
+            font-size: 18px;
+            line-height: 1;
+            margin-left: 8px;
+        }
+        #ds-scraper-gui .close-btn:hover {
+            color: #f38ba8;
+        }
+        #ds-scraper-gui .config-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 8px 0;
+            color: #a6adc8;
+            font-size: 12px;
+        }
+        #ds-scraper-gui .config-row input {
+            flex: 1;
+            background: #313244;
+            border: 1px solid #45475a;
+            color: #cdd6f4;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        #ds-scraper-gui .note {
+            font-size: 11px;
+            color: #6c7086;
+            text-align: center;
+            margin-top: 10px;
+        }
     `;
     document.head.appendChild(style);
 
     // ---------- 菜单 HTML ----------
     const menu = document.createElement('div');
-    menu.id = 'ds-scraper-lite';
+    menu.id = 'ds-scraper-gui';
     menu.innerHTML = `
-        <div class="collapse-icon" style="display:none;">📜</div>
-        <div class="panel-content">
-            <div class="header">
-                <h3>抓取器 <span class="badge">lite</span></h3>
-                <div class="header-actions">
-                    <span class="collapse-header-btn" title="折叠">▼</span>
-                    <span class="close-btn" title="关闭">×</span>
-                </div>
-            </div>
-            
-            <div class="mode-switch">
-                <div class="mode-btn active" data-mode="single">单对话</div>
-                <div class="mode-btn" data-mode="batch">批量</div>
-            </div>
-            
-            <div class="btn-group single-mode-only" id="single-btns">
-                <button id="ds-scrape-up" class="primary">⬆ 向上滚动抓取</button>
-                <button id="ds-scrape-down" class="primary">⬇ 向下滚动抓取</button>
-                <button id="ds-scrape-all" class="primary">🔄 抓取全部</button>
-            </div>
-            
-            <div class="btn-group batch-mode-only" id="batch-btns">
-                <button id="ds-batch-start" class="primary">▶ 开始批量抓取</button>
-                <button id="ds-batch-pause" class="warning">⏸ 暂停并保存</button>
-                <button id="ds-batch-stop" class="stop">⏹ 停止</button>
-            </div>
-            
-            <div class="config-section">
-                <div class="config-row">
-                    <label>⏱️ 间隔</label>
-                    <input id="ds-interval" type="number" min="10" max="5000" value="40" step="10">
-                    <span style="font-size:10px;">ms</span>
-                </div>
-                <div class="config-row">
-                    <label>📏 步长</label>
-                    <input id="ds-step" type="number" min="100" max="2000" value="800" step="50">
-                    <span style="font-size:10px;">px</span>
-                </div>
-            </div>
-            
-            <div class="batch-mode-only">
-                <div class="section-title">🔍 关键词（留空=全部）</div>
-                <div class="config-row">
-                    <input id="ds-filter-keyword" type="text" placeholder="如：第几代">
-                </div>
-                <div class="section-title">📁 导出方式</div>
-                <div class="config-row">
-                    <select id="ds-export-mode">
-                        <option value="separate">独立文件</option>
-                        <option value="merge">合并文件</option>
-                    </select>
-                </div>
-            </div>
-            
-            <div class="status" id="ds-status">✨ 就绪</div>
-            <div class="progress">
-                <div class="progress-bar" id="ds-progress"></div>
-            </div>
-            
-            <div class="footer-note">💡 自动保存为 TXT 格式</div>
-            <div class="ua-tip">💻 电脑UA效果更佳</div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin:0; border:none; padding:0; cursor:move; flex:1;">📜 对话抓取器</h3>
+            <span class="close-btn" title="关闭">×</span>
+        </div>
+        <button id="ds-scrape-up" class="primary">⬆ 向上滚动抓取</button>
+        <button id="ds-scrape-down" class="primary">⬇ 向下滚动抓取</button>
+        <button id="ds-scrape-all" class="primary">🔄 抓取全部 (先上后下)</button>
+        <button id="ds-stop" class="stop" disabled>⏹ 停止</button>
+        <div class="config-row">
+            <span>⏱️ 间隔(ms):</span>
+            <input id="ds-interval" type="number" min="200" max="5000" value="400" step="100">
+        </div>
+        <div class="config-row">
+            <span>📏 步长(px):</span>
+            <input id="ds-step" type="number" min="100" max="1000" value="300" step="50">
+        </div>
+        <div class="status" id="ds-status">就绪，点击按钮开始</div>
+        <div class="progress">
+            <div class="progress-bar" id="ds-progress"></div>
+        </div>
+        <div class="note">
+            💡 自动滚动并保存全部对话<br>
+            📁 停止后自动下载 HTML 文件<br>
+            🔑 奇数=用户 偶数=助手
         </div>
     `;
     document.body.appendChild(menu);
 
-    // ---------- 折叠 ----------
-    const collapseHeaderBtn = menu.querySelector('.collapse-header-btn');
-    const collapseIcon = menu.querySelector('.collapse-icon');
-    let isCollapsed = false;
-
-    collapseHeaderBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        isCollapsed = !isCollapsed;
-        if (isCollapsed) {
-            menu.classList.add('collapsed');
-            collapseHeaderBtn.style.display = 'none';
-            collapseIcon.style.display = 'flex';
-            statusDiv.innerText = '📦 已折叠';
-        } else {
-            menu.classList.remove('collapsed');
-            collapseHeaderBtn.style.display = 'flex';
-            collapseIcon.style.display = 'none';
-        }
-    });
-
-    menu.addEventListener('click', (e) => {
-        if (isCollapsed && (e.target === menu || e.target === collapseIcon)) {
-            isCollapsed = false;
-            menu.classList.remove('collapsed');
-            collapseHeaderBtn.style.display = 'flex';
-            collapseIcon.style.display = 'none';
-        }
-    });
-
-    // ---------- 模式切换 ----------
-    const modeBtns = menu.querySelectorAll('.mode-btn');
-    const singleBtns = document.getElementById('single-btns');
-    const batchBtns = document.getElementById('batch-btns');
-    const batchOnlyEls = menu.querySelectorAll('.batch-mode-only');
-    const singleOnlyEls = menu.querySelectorAll('.single-mode-only');
-    let currentMode = 'single';
-
-    function setMode(mode) {
-        currentMode = mode;
-        modeBtns.forEach(b => b.classList.remove('active'));
-        menu.querySelector(`.mode-btn[data-mode="${mode}"]`).classList.add('active');
-        if (mode === 'single') {
-            singleBtns.style.display = 'flex';
-            batchBtns.style.display = 'none';
-            batchOnlyEls.forEach(e => e.style.display = 'none');
-            singleOnlyEls.forEach(e => e.style.display = 'block');
-        } else {
-            singleBtns.style.display = 'none';
-            batchBtns.style.display = 'flex';
-            batchOnlyEls.forEach(e => e.style.display = 'block');
-            singleOnlyEls.forEach(e => e.style.display = 'none');
-        }
-    }
-    modeBtns.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
-
-    // ---------- 拖动 ----------
-    let dragging = false, ox, oy;
-    const header = menu.querySelector('.header');
-    header.addEventListener('mousedown', e => {
-        if (e.target.tagName === 'BUTTON' || e.target.closest('.close-btn') || e.target.closest('.collapse-header-btn') || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.classList.contains('mode-btn')) return;
-        dragging = true;
-        const r = menu.getBoundingClientRect();
-        ox = e.clientX - r.left;
-        oy = e.clientY - r.top;
+    // ---------- 拖动功能 ----------
+    let isDragging = false, offsetX, offsetY;
+    const header = menu.querySelector('h3');
+    header.addEventListener('mousedown', (e) => {
+        if (e.target.tagName === 'BUTTON' || e.target.classList.contains('close-btn')) return;
+        isDragging = true;
+        const rect = menu.getBoundingClientRect();
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
         menu.style.cursor = 'grabbing';
     });
-    document.addEventListener('mousemove', e => {
-        if (!dragging) return;
-        menu.style.left = (e.clientX - ox) + 'px';
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        menu.style.left = (e.clientX - offsetX) + 'px';
         menu.style.right = 'auto';
-        menu.style.top = (e.clientY - oy) + 'px';
+        menu.style.top = (e.clientY - offsetY) + 'px';
     });
-    document.addEventListener('mouseup', () => { dragging = false; menu.style.cursor = ''; });
+    document.addEventListener('mouseup', () => {
+        isDragging = false;
+        menu.style.cursor = '';
+    });
 
     // ---------- 元素 ----------
     const upBtn = document.getElementById('ds-scrape-up');
     const downBtn = document.getElementById('ds-scrape-down');
     const allBtn = document.getElementById('ds-scrape-all');
-    const batchStartBtn = document.getElementById('ds-batch-start');
-    const batchPauseBtn = document.getElementById('ds-batch-pause');
-    const batchStopBtn = document.getElementById('ds-batch-stop');
+    const stopBtn = document.getElementById('ds-stop');
     const statusDiv = document.getElementById('ds-status');
     const progressBar = document.getElementById('ds-progress');
     const closeBtn = menu.querySelector('.close-btn');
     const intervalInput = document.getElementById('ds-interval');
     const stepInput = document.getElementById('ds-step');
-    const filterInput = document.getElementById('ds-filter-keyword');
-    const exportSelect = document.getElementById('ds-export-mode');
 
-    // ---------- 公共 ----------
-    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    // ---------- 状态 ----------
+    let isRunning = false;
+    let stopRequested = false;
+    let collectedMessages = new Map(); // key -> {key, type, content}
+    let scrollInterval = null;
+    let currentDirection = null;
+    let scrollContainer = null;
+    let observer = null;
+    let currentUrl = window.location.href;
+
+    // ---------- 定位滚动容器 ----------
     function findScrollContainer() {
-        const cs = [];
-        document.querySelectorAll('div').forEach(d => {
-            const s = getComputedStyle(d);
-            if ((s.overflowY==='auto'||s.overflowY==='scroll') && d.scrollHeight>d.clientHeight) cs.push(d);
-        });
-        if (!cs.length) return document.scrollingElement||document.documentElement;
-        cs.sort((a,b)=>(b.clientWidth*b.clientHeight)-(a.clientWidth*a.clientHeight));
-        return cs[0];
-    }
-    function getChatLinks() { return Array.from(document.querySelectorAll('a[href*="/a/chat/s/"]')); }
-    function getCurrentChatLink() {
-        const p = location.pathname+location.search;
-        return getChatLinks().find(a=>a.href.includes(p));
-    }
-
-    // ===== 单对话 =====
-    let sr=false, ss=false, sDir=null, sCont=null, sMsgs=[], sSeen=new Set(), sInt=null;
-    function sExtract() {
-        const sels=['[data-message-id]','.prose','.whitespace-pre-wrap','[class*="message"]','.chat-message'];
-        const els=new Set(); sels.forEach(s=>document.querySelectorAll(s).forEach(e=>els.add(e)));
-        const n=[]; els.forEach(e=>{const t=e.textContent.trim(); if(t.length<5)return; const k=t.slice(0,60)+t.length; if(!sSeen.has(k)){sSeen.add(k);n.push(t);}});
-        return n;
-    }
-    function sUpdate() {
-        const nm=sExtract(); if(nm.length) sMsgs.push(...nm);
-        const c=sMsgs.reduce((a,t)=>a+t.length,0);
-        statusDiv.innerText=`📊 ${sMsgs.length}条·${(c/1024).toFixed(1)}KB`;
-        if(sCont){const p=(sCont.scrollTop/(sCont.scrollHeight-sCont.clientHeight))*100; progressBar.style.width=Math.min(p,100)+'%';}
-    }
-    function sSave() {
-        if(!sMsgs.length){alert('无内容');return;}
-        const t=document.title.replace(/[\\/:*?"<>|]/g,'_').trim()||'chat';
-        const b=new Blob([sMsgs.join('\n\n---\n\n')],{type:'text/plain'});
-        const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=`${t}_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.txt`; a.click();
-    }
-    function sStep() {
-        if(!sr||ss||!sCont) return;
-        const st=parseInt(stepInput.value); sCont.scrollBy({top:sDir==='up'?-st:st,behavior:'auto'});
-        setTimeout(()=>{
-            if(!sr||ss) return;
-            const a=sCont.scrollTop, at=a<=0, ab=a+sCont.clientHeight>=sCont.scrollHeight-5;
-            sUpdate();
-            if((sDir==='up'&&at)||(sDir==='down'&&ab)){statusDiv.innerText=`⏸ 已到${sDir==='up'?'顶':'底'}`;sStop();return;}
-            if(!window._nc)window._nc=0;
-            if(Math.abs(a-(window._lt||0))<5){if(++window._nc>=3){statusDiv.innerText='⚠ 无变化';sStop();}}else window._nc=0;
-            window._lt=a;
-        },200);
-    }
-    function sStart(d) {
-        if(sr) return; sr=true; ss=false; sDir=d; window._nc=0; window._lt=0;
-        upBtn.disabled=downBtn.disabled=allBtn.disabled=batchStartBtn.disabled=true;
-        sCont=findScrollContainer(); sSeen.clear(); sMsgs=[]; sUpdate();
-        sInt=setInterval(sStep,parseInt(intervalInput.value));
-        statusDiv.innerText=d==='up'?'⬆ 向上中':'⬇ 向下中';
-    }
-    function sAll() { if(sr)return; sStart('up'); const c=setInterval(()=>{if(!sr){clearInterval(c);setTimeout(()=>sStart('down'),500);}},500); }
-    function sStop() {
-        ss=true; sr=false; if(sInt){clearInterval(sInt);sInt=null;}
-        upBtn.disabled=downBtn.disabled=allBtn.disabled=batchStartBtn.disabled=false;
-        sSave(); progressBar.style.width='0%'; window._nc=0;
-    }
-
-    // ===== 批量 =====
-    let br=false, bp=false, bs=false, bProc=new Set(), bMsgs=[], bTitle='', bCol=new Set(), bAll=[];
-    function bProg(c){if(!c)return;const s=c===document.scrollingElement?document.documentElement:c;const p=s.scrollHeight<=s.clientHeight?100:(s.scrollTop/(s.scrollHeight-s.clientHeight))*100;progressBar.style.width=Math.min(p,100)+'%';}
-    function bVis(){
-        const sels=['[data-message-id]','.prose','.whitespace-pre-wrap','[class*="message"]','.chat-message'];
-        const ts=[],sn=new Set(); sels.forEach(s=>document.querySelectorAll(s).forEach(e=>{const t=e.textContent.trim();if(t.length>=5){const k=t.slice(0,60)+t.length;if(!sn.has(k)){sn.add(k);ts.push(t);}}}));
-        return ts;
-    }
-    function bInc(){bVis().forEach(t=>{const k=t.slice(0,60)+t.length;if(!bCol.has(k)){bCol.add(k);bMsgs.push(t);}});}
-    function bLinks(){return getChatLinks().map(a=>({el:a,href:a.href,title:a.textContent.trim().slice(0,40).replace(/[\\/:*?"<>|]/g,'_')||'untitled'}));}
-    function bFind(h){return getChatLinks().find(a=>a.href===h);}
-    async function bClick(l){if(!l)return false;const o=location.pathname;l.click();for(let i=0;i<50;i++){await sleep(100);if(location.pathname!==o)return true;}return false;}
-    function bTitleNow(){const c=getCurrentChatLink();if(c)return c.textContent.trim().slice(0,40).replace(/[\\/:*?"<>|]/g,'_')||'untitled';return document.title.replace(/[\\/:*?"<>|]/g,'_').slice(0,40)||'untitled';}
-    function bSave(t,m){if(!m.length)return;if(exportSelect.value==='merge'){bAll.push({title:t,content:m.join('\n\n---\n\n')});}else{const b=new Blob([m.join('\n\n---\n\n')],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`${t}_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.txt`;a.click();}}
-    function bMerged(){if(!bAll.length)return;const m=bAll.map(c=>`===== ${c.title} =====\n\n${c.content}`).join('\n\n\n');const b=new Blob([m],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`merged_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.txt`;a.click();}
-    async function bQuickTop(c){while(!bs&&!bp){const bf=c.scrollTop;c.scrollBy({top:-5000,behavior:'auto'});await sleep(2);if(c.scrollTop<=0||Math.abs(c.scrollTop-bf)<5)break;}}
-    async function bDown(c){let nc=0,sc=0;while(!bs&&!bp){const st=parseInt(stepInput.value),iv=parseInt(intervalInput.value);const bf=c.scrollTop;c.scrollBy({top:st,behavior:'auto'});bProg(c);await sleep(iv);bInc();if(++sc%3===0)statusDiv.innerHTML=`📄 ${bTitle}<br>${bMsgs.length}条`;if(Math.abs(c.scrollTop-bf)<5){if(++nc>=3)break;}else nc=0;if(c.scrollTop+c.clientHeight>=c.scrollHeight-5)break;}bInc();}
-    async function bUp(c){let nc=0,sc=0;while(!bs&&!bp){const st=parseInt(stepInput.value),iv=parseInt(intervalInput.value);const bf=c.scrollTop;c.scrollBy({top:-st,behavior:'auto'});bProg(c);await sleep(iv);bInc();if(++sc%3===0)statusDiv.innerHTML=`📄 ${bTitle}<br>${bMsgs.length}条`;if(Math.abs(c.scrollTop-bf)<5){if(++nc>=3)break;}else nc=0;if(c.scrollTop<=0)break;}bInc();}
-    async function bScrape(){bTitle=bTitleNow();statusDiv.innerHTML=`📄 ${bTitle}`;progressBar.style.width='0%';bCol.clear();bMsgs=[];const c=findScrollContainer();if(!c)return;await bQuickTop(c);if(bs)return;await bDown(c);if(bs)return;await sleep(500);await bUp(c);statusDiv.innerHTML=`✅ ${bTitle}:${bMsgs.length}条`;progressBar.style.width='100%';}
-    function bPrescan(){const kw=filterInput.value.trim().toLowerCase();if(!kw)return null;return bLinks().filter(c=>c.title.toLowerCase().includes(kw));}
-    async function bStart(){
-        br=true;bp=false;bs=false;bProc.clear();bAll=[];
-        batchStartBtn.disabled=true;batchPauseBtn.disabled=false;batchStopBtn.disabled=false;
-        upBtn.disabled=downBtn.disabled=allBtn.disabled=true;
-        const ms=bPrescan();
-        if(ms!==null){
-            const tl=bLinks().length;statusDiv.innerHTML=`🔍 找到${ms.length}个(共${tl}个)`;
-            if(!ms.length){bClean();statusDiv.innerHTML='⚠ 无匹配';return;}
-            const f=ms[0];const ce=getCurrentChatLink();if(!ce||ce.href!==f.href){const el=bFind(f.href);if(el){await bClick(el);await sleep(2000);}}
-            for(let i=0;i<ms.length;i++){if(bs||bp)break;const ch=ms[i];if(bProc.has(ch.href))continue;const cl=getCurrentChatLink();if(!cl||cl.href!==ch.href){const el=bFind(ch.href);if(!el)continue;await bClick(el);await sleep(2000);}await bScrape();if(bs)break;if(bMsgs.length){bSave(bTitle,bMsgs);bProc.add(ch.href);}}
-            statusDiv.innerHTML=`🎉 完成${bProc.size}个`;
-        }else{
-            const ls=getChatLinks();if(!ls.length){bClean();statusDiv.innerHTML='❌ 无链接';return;}
-            let cu=getCurrentChatLink();if(!cu){await bClick(ls[0]);await sleep(2000);}
-            while(!bs&&!bp){const cl=getCurrentChatLink();if(!cl)break;if(bProc.has(cl.href)){const idx=getChatLinks().indexOf(cl);const nx=idx>=0&&idx<ls.length-1?ls[idx+1]:null;if(!nx)break;await bClick(nx);await sleep(2000);continue;}await bScrape();if(bs)break;if(bMsgs.length){bSave(bTitle,bMsgs);bProc.add(cl.href);}const idx=getChatLinks().indexOf(cl);const nx=idx>=0&&idx<ls.length-1?ls[idx+1]:null;if(!nx){statusDiv.innerHTML=`🎉 完成${bProc.size}个`;break;}await bClick(nx);await sleep(2000);}
+        const virtualList = document.querySelector('.ds-virtual-list');
+        if (virtualList) {
+            let parent = virtualList.parentElement;
+            while (parent) {
+                const style = window.getComputedStyle(parent);
+                if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && parent.scrollHeight > parent.clientHeight) {
+                    return parent;
+                }
+                parent = parent.parentElement;
+            }
         }
-        if(exportSelect.value==='merge'&&bAll.length)bMerged();
-        if(bs)statusDiv.innerHTML='⏹ 已停止';
-        bClean();
+        const candidates = [];
+        const allDivs = document.querySelectorAll('div');
+        for (let div of allDivs) {
+            const style = window.getComputedStyle(div);
+            if ((style.overflowY === 'auto' || style.overflowY === 'scroll') && div.scrollHeight > div.clientHeight) {
+                candidates.push(div);
+            }
+        }
+        if (candidates.length === 0) return document.scrollingElement || document.documentElement;
+        candidates.sort((a, b) => (b.clientWidth * b.clientHeight) - (a.clientWidth * a.clientHeight));
+        return candidates[0];
     }
-    function bClean(){br=false;batchStartBtn.disabled=false;batchPauseBtn.disabled=true;batchStopBtn.disabled=true;upBtn.disabled=downBtn.disabled=allBtn.disabled=false;progressBar.style.width='0%';}
-    function bTogglePause(){if(!br)return;bp=!bp;batchPauseBtn.textContent=bp?'▶ 继续':'⏸ 暂停并保存';if(!bp){bStart();}else{if(bMsgs.length){const h=getCurrentChatLink()?.href;if(h&&!bProc.has(h)){bSave(bTitle,bMsgs);bProc.add(h);}}if(exportSelect.value==='merge'&&bAll.length)bMerged();}}
-    function bReqStop(){bs=true;bp=false;}
 
-    // ---------- 事件 ----------
-    upBtn.onclick=()=>sStart('up');
-    downBtn.onclick=()=>sStart('down');
-    allBtn.onclick=sAll;
-    batchStartBtn.onclick=bStart;
-    batchPauseBtn.onclick=bTogglePause;
-    batchStopBtn.onclick=bReqStop;
-    closeBtn.onclick=()=>{if(sr||br){if(confirm('确定关闭？')){if(sr)sStop();bReqStop();menu.remove();window.__dsScraperLite=false;}}else{menu.remove();window.__dsScraperLite=false;}};
-    window.addEventListener('beforeunload',()=>{if(sr)sStop();bReqStop();});
+    // ---------- 根据 key 奇偶判断消息类型 ----------
+    function getMessageType(key) {
+        return (key % 2 === 1) ? 'user' : 'assistant';
+    }
+
+    // ---------- 提取消息内容 ----------
+    function getMessageContent(msg, key) {
+        const type = getMessageType(key);
+
+        if (type === 'user') {
+            // 用户消息：取整个消息的 innerHTML，但去掉按钮等无关元素
+            const clone = msg.cloneNode(true);
+            const useless = clone.querySelectorAll('button, [role="button"], .ds-icon-button, .ds-flex.items-center');
+            useless.forEach(el => el.remove());
+            return clone.innerHTML;
+        } else {
+            // 助手消息：优先取 ds-markdown 内容（包含思考和回答）
+            const thinkContent = msg.querySelector('div.ds-think-content');
+            const assistantMain = msg.querySelector('div.ds-assistant-message-main-content');
+            const markdownContent = msg.querySelector('div.ds-markdown');
+
+            let fullContent = '';
+
+            if (thinkContent) {
+                fullContent += thinkContent.outerHTML;
+            }
+
+            if (assistantMain) {
+                fullContent += assistantMain.innerHTML;
+            } else if (markdownContent) {
+                fullContent += markdownContent.outerHTML;
+            } else {
+                // 兜底：取整个消息的 innerHTML
+                fullContent = msg.innerHTML;
+            }
+
+            return fullContent;
+        }
+    }
+
+    // ---------- 提取所有可见消息 ----------
+    function extractMessages() {
+        const messages = document.querySelectorAll('div.ds-virtual-list div.ds-virtual-list-items div.ds-message');
+        let newMessagesCount = 0;
+
+        messages.forEach(msg => {
+            let virtualItem = msg.closest('[data-virtual-list-item-key]');
+            if (!virtualItem) return;
+
+            const key = parseInt(virtualItem.getAttribute('data-virtual-list-item-key'));
+            if (isNaN(key)) return;
+
+            // 跳过已收集
+            if (collectedMessages.has(key)) return;
+
+            const type = getMessageType(key);
+            const content = getMessageContent(msg, key);
+
+            if (content && content.trim().length > 0) {
+                collectedMessages.set(key, {
+                    key: key,
+                    type: type,
+                    content: content,
+                    timestamp: new Date().toISOString()
+                });
+                newMessagesCount++;
+            }
+        });
+
+        return newMessagesCount;
+    }
+
+    // ---------- MutationObserver ----------
+    // 滚动页面的过程中只要 `div.ds-virtual-list` 中的内容产生变化，就更新存储的信息
+    function setupObserver() {
+        if (observer) {
+            observer.disconnect();
+            observer = null;
+        }
+
+        const virtualList = document.querySelector('.ds-virtual-list');
+        if (!virtualList) {
+            console.warn('DeepSeek Scraper: 未找到 .ds-virtual-list');
+            return;
+        }
+
+        observer = new MutationObserver((mutations) => {
+            if (!isRunning) return;
+
+            let hasNewContent = false;
+            mutations.forEach(mutation => {
+                if (mutation.type === 'childList') {
+                    mutation.addedNodes.forEach(node => {
+                        if (node.nodeType === 1) {
+                            if (node.hasAttribute && node.hasAttribute('data-virtual-list-item-key')) {
+                                hasNewContent = true;
+                            }
+                            if (node.querySelector && (node.querySelector('div.ds-message') || node.classList.contains('ds-message'))) {
+                                hasNewContent = true;
+                            }
+                        }
+                    });
+                }
+            });
+
+            if (hasNewContent) {
+                const newCount = extractMessages();
+                if (newCount > 0) {
+                    updateStatus();
+                }
+            }
+        });
+
+        observer.observe(virtualList, {
+            childList: true,
+            subtree: true
+        });
+    }
+
+    // ---------- 更新状态 ----------
+    function updateStatus() {
+        const totalMessages = collectedMessages.size;
+        const keys = Array.from(collectedMessages.keys()).sort((a, b) => a - b);
+        const minKey = keys.length > 0 ? keys[0] : 'N/A';
+        const maxKey = keys.length > 0 ? keys[keys.length - 1] : 'N/A';
+        const users = keys.filter(k => k % 2 === 1).length;
+        const assistants = keys.filter(k => k % 2 === 0).length;
+
+        statusDiv.innerText = `📊 已收集 ${totalMessages} 条\n👤 用户: ${users} | 🤖 助手: ${assistants}\nKey 范围: ${minKey} - ${maxKey}`;
+
+        if (scrollContainer) {
+            const scrollTop = scrollContainer.scrollTop;
+            const scrollHeight = scrollContainer.scrollHeight;
+            const clientHeight = scrollContainer.clientHeight;
+            if (scrollHeight > clientHeight) {
+                const progress = (scrollTop / (scrollHeight - clientHeight)) * 100;
+                progressBar.style.width = Math.min(Math.max(progress, 0), 100) + '%';
+            }
+        }
+    }
+
+    // ---------- 保存为 HTML 文件 ----------
+    function saveToFile() {
+        if (collectedMessages.size === 0) {
+            alert('没有抓取到任何内容');
+            return;
+        }
+
+        const sortedMessages = Array.from(collectedMessages.values())
+            .sort((a, b) => a.key - b.key);
+
+        const keys = sortedMessages.map(m => m.key);
+        const minKey = keys[0];
+        const maxKey = keys[keys.length - 1];
+        const totalCount = sortedMessages.length;
+        const userCount = sortedMessages.filter(m => m.type === 'user').length;
+        const assistantCount = sortedMessages.filter(m => m.type === 'assistant').length;
+
+        // 计算缺失的 key
+        const expectedRange = maxKey - minKey + 1;
+        const missingCount = expectedRange - totalCount;
+        const missingKeys = [];
+        for (let i = minKey; i <= maxKey; i++) {
+            if (!collectedMessages.has(i)) {
+                missingKeys.push(i);
+            }
+        }
+
+        // 构建 html
+        let htmlContent = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepSeek 对话记录</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        font-family: system-ui, -apple-system, sans-serif;
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #1e1e2e;
+        color: #cdd6f4;
+        line-height: 1.6;
+    }
+    .header {
+        text-align: center;
+        padding: 30px 20px;
+        border-bottom: 2px solid #45475a;
+        margin-bottom: 30px;
+    }
+    .header h1 { color: #89b4fa; font-size: 24px; margin-bottom: 10px; }
+    .header p { color: #6c7086; font-size: 14px; }
+    .message {
+        margin: 20px 0;
+        padding: 20px;
+        border-radius: 10px;
+    }
+    .message-key {
+        font-size: 12px;
+        color: #6c7086;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #45475a;
+    }
+    .message-key .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: bold;
+    }
+    .badge-user { background: #89b4fa33; color: #89b4fa; }
+    .badge-assistant { background: #a6e3a133; color: #a6e3a1; }
+    .user {
+        background: #313244;
+        border-left: 4px solid #89b4fa;
+    }
+    .assistant {
+        background: #1e1e2e;
+        border: 1px solid #45475a;
+    }
+    .message-content {
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+    }
+    .user .message-content {
+        white-space: pre-wrap; /* 保留空格并正常换行 */
+    }
+    .message-content pre {
+        background: #11111b;
+        padding: 12px;
+        border-radius: 6px;
+        overflow-x: auto;
+        margin: 10px 0;
+    }
+    .message-content code {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+    }
+    .message-content p { margin: 8px 0; }
+    .message-content ul, .message-content ol { margin: 8px 0; padding-left: 24px; }
+    .message-content table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 10px 0;
+    }
+    .message-content th, .message-content td {
+        border: 1px solid #45475a;
+        padding: 8px;
+        text-align: left;
+    }
+    .message-content th { background: #313244; }
+    .ds-think-content {
+        background: #181825;
+        border: 1px dashed #45475a;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        color: #a6adc8;
+        font-style: italic;
+    }
+    .stats {
+        margin-top: 40px;
+        padding: 24px;
+        background: #313244;
+        border-radius: 10px;
+        border: 1px solid #45475a;
+    }
+    .stats h2 { color: #89b4fa; margin-bottom: 16px; font-size: 20px; }
+    .stats ul { list-style: none; }
+    .stats li {
+        padding: 8px 0;
+        border-bottom: 1px solid #45475a33;
+        font-size: 14px;
+    }
+    .stats li:last-child { border-bottom: none; }
+    .missing { color: #f38ba8; font-weight: bold; }
+    .success { color: #a6e3a1; }
+</style>
+</head>
+<body>
+<div class="header">
+    <h1>📜 DeepSeek 对话记录</h1>
+    <p>导出时间: ${new Date().toLocaleString('zh-CN')}</p>
+    <p>页面标题: ${document.title}</p>
+    <p>URL: ${currentUrl}</p>
+</div>
+<div class="messages">
+`;
+
+        sortedMessages.forEach(msg => {
+            const typeClass = msg.type;
+            const typeLabel = msg.type === 'user' ? '👤 用户' : '🤖 助手';
+            const badgeClass = msg.type === 'user' ? 'badge-user' : 'badge-assistant';
+
+            htmlContent += `
+<div class="message ${typeClass}">
+    <div class="message-key">
+        🔑 Key: <strong>${msg.key}</strong>
+        <span class="badge ${badgeClass}">${typeLabel}</span>
+    </div>
+    <div class="message-content">${msg.content}</div>
+</div>
+`;
+        });
+
+        htmlContent += `
+</div>
+<div class="stats">
+    <h2>📊 导出统计</h2>
+    <ul>
+        <li><strong>实际导出条数:</strong> ${totalCount}</li>
+        <li><strong>用户消息:</strong> ${userCount} 条 (奇数 Key)</li>
+        <li><strong>助手消息:</strong> ${assistantCount} 条 (偶数 Key)</li>
+        <li><strong>Key 起始值:</strong> ${minKey}</li>
+        <li><strong>Key 结束值:</strong> ${maxKey}</li>
+        <li><strong>Key 范围:</strong> ${minKey} ~ ${maxKey} (共 ${expectedRange} 个位置)</li>
+        <li><strong>缺失条数:</strong> ${missingCount}</li>
+        ${missingCount > 0
+            ? `<li class="missing"><strong>⚠️ 缺失的 Key:</strong> ${missingKeys.join(', ')}</li>`
+            : '<li class="success"><strong>✅ Key 连续完整，无缺失</strong></li>'}
+    </ul>
+</div>
+</body>
+</html>`;
+
+        const title = document.title.replace(/[\\/:*?"<>|]/g, '_').trim() || 'deepseek_chat';
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${title}_${timestamp}.html`;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        statusDiv.innerText = `✅ 已保存 ${totalCount} 条\n👤${userCount} 用户 | 🤖${assistantCount} 助手`;
+    }
+
+    // ---------- 滚动 ----------
+    function scrollStep() {
+        if (!isRunning || stopRequested || !scrollContainer) return;
+
+        const step = parseInt(stepInput.value, 10);
+        const beforeTop = scrollContainer.scrollTop;
+
+        if (currentDirection === 'up') {
+            scrollContainer.scrollBy({ top: -step, behavior: 'auto' });
+        } else {
+            scrollContainer.scrollBy({ top: step, behavior: 'auto' });
+        }
+
+        setTimeout(() => {
+            if (!isRunning || stopRequested) return;
+
+            const afterTop = scrollContainer.scrollTop;
+            updateStatus();
+
+            const atTop = afterTop <= 0;
+            const atBottom = (afterTop + scrollContainer.clientHeight) >= scrollContainer.scrollHeight - 5;
+
+            if ((currentDirection === 'up' && atTop) || (currentDirection === 'down' && atBottom)) {
+                statusDiv.innerText = `⏸️ 已到达${currentDirection === 'up' ? '顶部' : '底部'}`;
+                stop();
+                return;
+            }
+
+            if (Math.abs(afterTop - beforeTop) < 5) {
+                if (!window.__noChangeCount) window.__noChangeCount = 0;
+                window.__noChangeCount++;
+                if (window.__noChangeCount >= 3) {
+                    statusDiv.innerText = '⚠️ 滚动无变化，可能已到底';
+                    stop();
+                    return;
+                }
+            } else {
+                window.__noChangeCount = 0;
+            }
+        }, 200);
+    }
+
+    function startScrolling(direction) {
+        if (isRunning) return;
+        isRunning = true;
+        stopRequested = false;
+        currentDirection = direction;
+        currentUrl = window.location.href;
+        window.__noChangeCount = 0;
+
+        upBtn.disabled = downBtn.disabled = allBtn.disabled = true;
+        stopBtn.disabled = false;
+
+        scrollContainer = findScrollContainer();
+        console.log('DeepSeek Scraper: 滚动容器', scrollContainer);
+
+        collectedMessages.clear();
+
+        extractMessages();
+        setupObserver();
+        updateStatus();
+
+        const intervalTime = parseInt(intervalInput.value, 10);
+        scrollInterval = setInterval(() => {
+            if (window.location.href !== currentUrl) {
+                console.log('抓取过程中检测到 URL 变化，停止抓取');
+                stop();
+                return;
+            }
+            scrollStep();
+        }, intervalTime);
+
+        statusDiv.innerText = direction === 'up' ? '⬆ 向上滚动中...' : '⬇ 向下滚动中...';
+    }
+
+    function startAll() {
+        if (isRunning) return;
+        startScrolling('up');
+
+        const checkUpDone = setInterval(() => {
+            if (!isRunning) {
+                clearInterval(checkUpDone);
+                setTimeout(() => {
+                    startScrolling('down');
+                }, 1000);
+            }
+        }, 500);
+    }
+
+    function stop() {
+        stopRequested = true;
+        isRunning = false;
+
+        if (scrollInterval) {
+            clearInterval(scrollInterval);
+            scrollInterval = null;
+        }
+
+        if (observer) {
+            observer.disconnect();
+            observer = null;
+        }
+
+        upBtn.disabled = downBtn.disabled = allBtn.disabled = false;
+        stopBtn.disabled = true;
+
+        saveToFile();
+        progressBar.style.width = '0%';
+        window.__noChangeCount = 0;
+    }
+
+    // ---------- URL 变化检测 ----------
+    function checkUrlChange() {
+        const newUrl = window.location.href;
+        if (newUrl !== currentUrl) {
+            console.log('DeepSeek Scraper: 检测到 URL 变化，重置抓取器');
+            console.log('旧 URL:', currentUrl);
+            console.log('新 URL:', newUrl);
+
+            if (isRunning) {
+                stopRequested = true;
+                isRunning = false;
+                if (scrollInterval) {
+                    clearInterval(scrollInterval);
+                    scrollInterval = null;
+                }
+                if (observer) {
+                    observer.disconnect();
+                    observer = null;
+                }
+            }
+
+            currentUrl = newUrl;
+            collectedMessages.clear();
+            scrollContainer = null;
+            currentDirection = null;
+            window.__noChangeCount = 0;
+
+            upBtn.disabled = downBtn.disabled = allBtn.disabled = false;
+            stopBtn.disabled = true;
+            statusDiv.innerText = '🔄 对话已切换，就绪';
+            progressBar.style.width = '0%';
+
+            setTimeout(() => {
+                scrollContainer = findScrollContainer();
+                console.log('DeepSeek Scraper: 重新定位滚动容器', scrollContainer);
+                statusDiv.innerText = '就绪，点击按钮开始';
+            }, 500);
+        }
+    }
+
+    // 监听 URL 变化
+    window.addEventListener('popstate', () => {
+        setTimeout(checkUrlChange, 100);
+    });
+
+    const originalPushState = history.pushState;
+    history.pushState = function() {
+        originalPushState.apply(this, arguments);
+        setTimeout(checkUrlChange, 100);
+    };
+
+    const originalReplaceState = history.replaceState;
+    history.replaceState = function() {
+        originalReplaceState.apply(this, arguments);
+        setTimeout(checkUrlChange, 100);
+    };
+
+    setInterval(checkUrlChange, 1000);
+
+    // ---------- 事件绑定 ----------
+    upBtn.addEventListener('click', () => startScrolling('up'));
+    downBtn.addEventListener('click', () => startScrolling('down'));
+    allBtn.addEventListener('click', startAll);
+    stopBtn.addEventListener('click', stop);
+
+    closeBtn.addEventListener('click', () => {
+        if (isRunning) {
+            if (confirm('正在抓取中，确定关闭？')) {
+                stop();
+                menu.remove();
+                window.__deepseekScraperGUI = false;
+            }
+        } else {
+            menu.remove();
+            window.__deepseekScraperGUI = false;
+        }
+    });
+
+    window.addEventListener('beforeunload', () => {
+        if (isRunning) stop();
+    });
+
+    console.log('✅ DeepSeek 对话抓取器已就绪 (v1.5)');
 })();
