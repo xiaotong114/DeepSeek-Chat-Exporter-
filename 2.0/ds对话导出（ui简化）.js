@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         DeepSeek 对话抓取器 (轻量UI版)
+// @name         ds对话导出（ui简化）
 // @namespace    http://tampermonkey.net/
 // @version      6.1
 // @description  功能完全不变，仅UI轻量化，适合性能不佳的设备
