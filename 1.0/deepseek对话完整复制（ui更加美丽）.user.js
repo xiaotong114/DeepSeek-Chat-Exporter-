@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         DeepSeek 对话全文抓取器 (美化折叠版)
+// @name         deepseek对话完整复制（ui更加美丽）
 // @namespace    http://tampermonkey.net/
 // @version      2.1
 // @description  自动滚动加载 DeepSeek 对话页面，保存完整对话，界面美化可折叠
