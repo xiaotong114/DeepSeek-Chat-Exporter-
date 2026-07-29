@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         DeepSeek 对话抓取器 (全能合并版)
+// @name         ds对话导出（美化版）
 // @namespace    http://tampermonkey.net/
 // @version      6.0
 // @description  单对话抓取 + 批量抓取 + 关键词过滤 + 导出选择 + 美化UI + 可折叠
