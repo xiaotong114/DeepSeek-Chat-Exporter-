@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         DeepSeek 对话全文抓取器 (简单GUI版)
+// @name         deepseek对话完整复制
 // @namespace    http://tampermonkey.net/
 // @version      1.2
 // @description  自动滚动加载 DeepSeek 对话页面，保存完整对话为 txt 文件
